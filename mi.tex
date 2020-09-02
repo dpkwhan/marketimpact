@@ -1,0 +1,180 @@
+\documentclass[a4paper]{article}
+
+\usepackage{amsmath,amsthm,amssymb,amsfonts}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage[dvipsnames]{xcolor}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyheadoffset{0cm}
+\renewcommand{\headrulewidth}{0pt} 
+\renewcommand{\footrulewidth}{0pt}
+\fancyfoot[R]{\thepage}
+
+\setlength{\parindent}{0ex}
+\setlength{\parskip}{1em}
+
+\usepackage{geometry}
+\geometry{
+ left=40mm,
+ top=30mm,
+ }
+
+\title{Market Impact: A Vector Autoregressive with Exogenous Variables Approach}
+
+\author{David Han}
+
+\date{September 1, 2020}
+
+\begin{document}
+\clearpage
+\maketitle
+\thispagestyle{empty}
+
+\section{Introduction}
+In the algorithmic execution design and implementation, there are three major components:
+
+\begin{itemize}
+\item \textbf{Scheduler}. The scheduler decides an optimal schedule for the algorithms to follow and also provides a pair of upper and lower bands to make sure the algorithm follows the schedule closely enough.
+\item \textbf{Microtrader}. Given the target quantity to trade and the tolerance bands from scheduler, the microtrader decides how many child orders to trade and the aggressiveness of each child slice, taking into account the execution progress and short-term signals on market price movement.
+\item \textbf{SOR}: The Smart Order Router decides how to split each child order given by the microtrader and to which venue to send each slice.
+\end{itemize}
+
+Market impact plays a critical role in deciding the optimal trading trajectory and it is extensively studies in the last two decades, starting with the seminal paper \emph{Optimal Execution of Portfolio Transactions} by Robert Almgren and Neil Chriss in 2000, which introduced a market impact model and proposed that optimal trade execution schedule is a trade-off between trading slowly to minimize market impact and trading rapidly to reduce timing risk relative to an arrival price. 
+
+\section{Literature Review}
+There are three main streams of modeling market impact in academia and algorithmic trading practice:
+
+\begin{itemize}
+\item \textbf{Square root law}. This model is widely used before 2000. Roughly, the model has the following form: $$\Delta P = \alpha \times \sigma \sqrt{\frac{S}{V}}$$ where $\sigma$ is the daily volatility, $S$ is the order size in shares, $V$ is the daily volume and $\alpha$ is a constant to be estimated. This simple model assumes that market impact solely depends on the relative order size but fails to take into account the pace of execution, trading style, stock volatility, etc.
+\item \textbf{Almgren and Chriss framework}. This model is very popular among sell-side institutions as a basis for arrival price benchmark execution algorithms such as Implementation Shortfall. One of the popular functional form for market impact is $$MI = \alpha \cdot \sigma ^{\beta} \cdot \rho^{\gamma}$$ where $\alpha$, $\beta$ and $\gamma$ are three parameters to be calibrated, $\sigma$ is the annualized volatility and $\rho$ is the participation rate. Taking the logarithmic operation on both sides of the above model yields $$log(MI) = log\alpha + \beta log\sigma + \gamma log\rho$$ This model is very easy to calibrate using the standard \emph{OLS}. 
+\item \textbf{Propagator model}. In a continuous time propagation model, the stock price $P_t$ at time $t$ is given by $$P_t = P_0 + P_0\int_{0}^t f(v_s)g(t-s)ds + noise$$ where $t$ is the volume time, $v$ is the trading rate at time $s<t$, $f(\cdot)$ and $g(\cdot)$ are the impulse and decay functions. An appropriate functional form, \emph{e.g.} power law function, can be assumed for $f$ and $g$ and a proprietary execution data can be used to calibrate the model.
+\end{itemize}
+
+In summary, all these models fail to address a few key aspects a modern trader is interested in:
+\begin{itemize}
+\item These models are linear or indirectly linear, \emph{i.e.} linear after some transformation, so as to make it easy to calibrate in practice.
+\item These models focus on estimating the market impact of trading a single security, \emph{i.e.} failing to exam the cross-asset impact.
+\item Market impact of portfolio trading and single stock trading.
+\end{itemize}
+
+This paper aims to provide a framework to model market impact and addresses the above-mentioned shortcomings in the current market impact research.
+
+\section{The Proposed Model}
+\subsection{Vector Autoregressive (VAR)}
+The rapid development of modern trading technology has accelerated the integration of global financial markets and the price movement in one market/instrument can easily spread to other markets/instruments. Today's financial instruments are more dependent on each other and their dynamics must be jointly modeled. Vector autoregressive models provide an important research tool to analyze and predict the dynamics of prices of different instruments. A $p$-th order vector autoregressive, denoted VAR(p), is 
+$$
+\bf y_{t}=\alpha + \beta_{1}y_{t-1} + \beta_{2}y_{t-2}+\cdots + \beta_{p}y_{t-p}+\epsilon_{t}
+$$
+
+\subsection{VAR with Exogenous Variables}
+A VAR process can be affected by other observable variables that are determined outside the system of interest. Such variables are called exogenous (independent) variables. Exogenous variables can be stochastic or non-stochastic. The process can also be affected by the lags of exogenous variables. A model used to describe this process is called a VARX(p, s) model which is written as $$\bf y_t = \alpha + \sum_{i=1}^{p} \Phi_i y_{t-i} + \sum_{i=1}^{s} \Theta_i x_{t-i} + \epsilon_{t}$$ where $\bf x_t = (x_{1t},\cdots,x_{rt})^\prime$ is a $r$-dimentional time series vector, $\Theta_i$ is a $k \times r$ matrix and $\epsilon_{t}$ is a sequence of \emph{i.i.d.} random vectors with mean zero and positive-definite covariance $\Sigma_{\epsilon}$.
+
+The VARX model can explain the dynamics between endogenous and exogenous variables. It can also helps us understand the impact of a variable or a set of variables on others through the impulse response function (IRF). Furthermore, VARX can be used to predict and forecast time series data.
+
+\subsection{The Model}
+Without loss of generality, a VARX(1, 0) model is proposed as follows:
+$$
+\bf y_t = \alpha + \Phi_1 y_{t-1} + \Theta_1 x_t +\epsilon_{t}
+$$
+where $\textbf{y}_t = (y_{1t}, y_{2t})^\prime$ and $\textbf{x}_t = (x_{1t}, x_{2t}, x_{3t}, x_{4t})^\prime$. For example,
+
+\begin{description}
+\item $y_1$: the price return of interest rate futures of 10-year treasury bill
+\item $y_2$: the price return of interest rate futures of 5-year treasury bill
+\item $x_1$: the participation rate of trading interest rate futures of 10-year treasury bill
+\item $x_2$: the participation rate of trading interest rate futures of 5-year treasury bill
+\item $x_3$: the volatility of interest rate futures of 10-year treasury bill
+\item $x_4$: the volatility of interest rate futures of 5-year treasury bill
+\end{description}
+
+
+More details are discussed in section \ref{sec:implementation} on examining:
+\begin{itemize}
+\item the optimal number of time lags
+\item unit root and stationary test
+\item Granger causality of the exogenous variables
+\end{itemize}
+
+\section{Data}
+\subsection{Tick and execution data}
+The following information is required to calibrate a VARX(1, 0) model specified in the previous section:
+\begin{description}
+\item $time$: timestamp of each child execution
+\item $price$: price of each child execution
+\item $size$: size of each child execution
+\item $arrivalPrice$: the arrival mid-quote price as of the start time of sampling period
+\item $volatility$: intra-day price volatility in each sampling period
+\item Some other information that are relevant to the model
+\end{description}
+
+\subsection{Descriptive statistics}
+\textcolor{blue}{[Table inserted here]}
+
+\section{Considerations for Model Fitting}
+\label{sec:implementation}
+
+\subsection{Correlation within and among time series}
+\subsubsection*{Autocorrelation function (ACF)}
+See Python function \href{https://www.statsmodels.org/devel/generated/statsmodels.tsa.stattools.acf.html}{statsmodels.tsa.stattools.acf}.
+
+\textcolor{blue}{[Charts inserted here]}
+
+\subsubsection*{Partial autocorrelation function (PACF)}
+See Python function \href{https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.pacf.html}{statsmodels.tsa.stattools.pacf}.
+
+\textcolor{blue}{[Charts inserted here]}
+
+\subsubsection*{Cross-correlation function (CCF)}
+See Python function \href{https://www.statsmodels.org/stable/generated/statsmodels.tsa.stattools.ccf.html}{statsmodels.tsa.stattools.ccf}.
+
+\textcolor{blue}{[Charts inserted here]}
+
+\subsection{Unit root and stationarity test}
+See Python function \href{https://www.statsmodels.org/dev/generated/statsmodels.tsa.stattools.adfuller.html}{statsmodels.tsa.stattools.adfuller} for unit root test and \href{https://www.statsmodels.org/dev/examples/notebooks/generated/stationarity_detrending_adf_kpss.html} {statsmodels.tsa.stattools.kpss} to test trend stationarity.
+
+\subsection{Granger causality}
+See Python function \href{https://www.statsmodels.org/dev/generated/statsmodels.tsa.stattools.grangercausalitytests.html}{statsmodels.tsa.stattools.grangercausalitytests} for Granger causality test.
+
+\subsection{Information criteria}
+Multiple information criteria can be used to select the $p$ and $s$ in the VARX(p, s) model. For example,
+\begin{itemize}
+\item Bayesian information criteria (BIC)
+\item Akaike information criterion(AIC)
+\item Hannan-Quinn information criterion (HQ)
+\end{itemize}
+
+\subsection{Model fitting}
+This mode can be fitted with \href{https://www.statsmodels.org/devel/examples/notebooks/generated/statespace_varmax.html}{VARMAX models} in Python package statsmodels.
+
+\section{Application}
+This model is flexible enough to answer the following questions:
+\begin{itemize}
+\item how exogenous variables like participation rate, volatility, relative order size, affect market impact via the impulse response function.
+\item how to model the market impact of different horizons from minutes, hours to days by defining different lengths of time period and time lags.
+\item compare the market impact of trading one instrument vs multiple instruments
+\end{itemize}
+
+\begin{thebibliography}{9}
+\bibitem{almgrenandchriss} 
+Robert Almgren and Neil Chriss. 
+\textit{Optimal Execution of Portfolio Transactions}. 
+Journal of Risk, 5-30. 2000.
+\bibitem{hamilton} 
+James Hamilton. 
+\textit{Time Series Analysis}. 
+Princeton University Press, Princeton, NJ. 1994.
+
+\bibitem{tsay} 
+Ruey S. Tsay. 
+\textit{Multivariate Time Series Analysis with R and Financial Applications}. 
+Wiley. Hoboken, NJ. 2014.
+
+\bibitem{statsmodel} 
+Statsmodels in Python,
+\texttt{https://www.statsmodels.org/stable/index.html}
+\end{thebibliography}
+
+
+\end{document}
